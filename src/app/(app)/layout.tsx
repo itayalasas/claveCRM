@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { AlertTriangle, ShieldAlert, KeyRound, ExternalLink, Settings, XCircle, LogIn } from "lucide-react"; 
 import { Skeleton } from "@/components/ui/skeleton";
 import { SidebarProvider } from "@/components/ui/sidebar"; 
+import { headers } from "next/headers";
 
 function LicenseAccessDeniedBlock({ status, isAdmin, forBaseDomain }: { status: string, isAdmin: boolean, forBaseDomain?: boolean }) {
   let title = "Acceso Denegado por Licencia";
@@ -58,16 +59,15 @@ function LicenseAccessDeniedBlock({ status, isAdmin, forBaseDomain }: { status: 
 }
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { currentUser, effectiveLicenseStatus, loading, isUserDataLoaded, hasPermission } = useAuth();
+  const { currentUser, effectiveLicenseStatus, loading, isUserDataLoaded, hasPermission, tenantId: tenantIdFromContext } = useAuth();
   const pathname = usePathname();
-  
+  const headersList = headers();
+  const tenantIdFromHeader = headersList.get('x-tenant-id');
+
   const userCanManageLicense = currentUser ? hasPermission('gestionar-licencia') : false;
   const isAdminOnLicensePage = userCanManageLicense && pathname === '/settings/license';
-
-  console.log("AppLayout: loading:", loading, "isUserDataLoaded:", isUserDataLoaded, "currentUser:", !!currentUser, "effectiveLicenseStatus:", effectiveLicenseStatus, "pathname:", pathname, "userCanManageLicense:", userCanManageLicense);
-
+  
   if (loading || !isUserDataLoaded) {
-    console.log("AppLayout: Mostrando Skeleton Loader (carga inicial)");
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <div className="flex flex-col items-center gap-4"><Skeleton className="h-12 w-12 rounded-full" /><div className="space-y-2"><Skeleton className="h-4 w-[250px]" /><Skeleton className="h-4 w-[200px]" /></div></div>
@@ -75,23 +75,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Si no hay usuario y ya se cargaron los datos, pero no estamos en el dominio base (implica un tenant en la URL),
-  // se asume que se debe loguear en ese tenant. No mostramos bloqueo, dejamos que la página de login (si es a donde va) se muestre.
-  // La lógica de login ahora debería manejar la redirección.
-  // El principal bloqueo es si el tenant NO TIENE licencia válida y el usuario no es admin.
-  if (currentUser) {
-    const hasLicenseProblem = effectiveLicenseStatus !== 'active' && effectiveLicenseStatus !== 'trial';
-    if (hasLicenseProblem && !isAdminOnLicensePage) {
-        console.log("AppLayout: currentUser existe, hay problema de licencia y no es admin en pág. de licencia. Bloqueando.");
-        return <LicenseAccessDeniedBlock status={effectiveLicenseStatus} isAdmin={userCanManageLicense} />;
-    }
-  } else if (!currentUser && isUserDataLoaded) {
-    // Si no hay usuario y los datos están cargados, las páginas protegidas deberían redirigir por su cuenta.
-    // No mostramos un bloqueo de licencia aquí porque no podemos determinar si es por una URL de tenant inválida o simplemente no logueado.
-    console.log("AppLayout: No hay usuario pero los datos están cargados. Dejando que la página maneje la redirección.");
+  if (!currentUser && tenantIdFromHeader) {
+      // Visiting a tenant URL but not logged in. Let the login page handle it.
+      // Do nothing here, allow children (login page) to render.
+  } else if (!currentUser && !tenantIdFromHeader) {
+      // On base domain and not logged in.
+      // This is okay for pages like /login, but might need adjustment for others.
+      // For simplicity, we let pages handle their own auth checks.
+  } else if (currentUser) {
+      const hasLicenseProblem = effectiveLicenseStatus !== 'active';
+      if (hasLicenseProblem && !isAdminOnLicensePage) {
+          return <LicenseAccessDeniedBlock status={effectiveLicenseStatus} isAdmin={userCanManageLicense} />;
+      }
+      if (!tenantIdFromHeader && currentUser.tenantId) {
+          return <LicenseAccessDeniedBlock status="" isAdmin={userCanManageLicense} forBaseDomain={true} />;
+      }
   }
-  
-  console.log("AppLayout: Renderizando contenido normal de la aplicación.");
+
   return (
     <SidebarProvider>
       <div className="flex h-screen bg-background">

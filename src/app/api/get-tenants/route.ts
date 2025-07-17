@@ -30,25 +30,28 @@ const db = getFirestore(adminApp!);
 export async function GET(request: Request) {
   try {
     const tenantsSnapshot = await db.collection('tenants').get();
-    const tenantIds: string[] = [];
+    const subdomains: string[] = [];
 
     if (tenantsSnapshot.empty) {
       console.log('API get-tenants: No documents found in "tenants" collection.');
-      return NextResponse.json({ tenantIds: [] });
+      return NextResponse.json({ tenantIds: [] }); // Mantener el nombre de la propiedad por consistencia
     }
 
     tenantsSnapshot.forEach(doc => {
-      // The document ID itself is the tenantId
-      const tenantId = doc.id;
-      if (tenantId) {
-          tenantIds.push(tenantId);
+      const data = doc.data();
+      // Asumimos que el subdominio está en un campo llamado 'subdomain' o 'domain'
+      const subdomain = data.subdomain || data.domain; 
+      if (subdomain && typeof subdomain === 'string') {
+        subdomains.push(subdomain);
       }
     });
     
-    const uniqueTenantIds = [...new Set(tenantIds)];
+    const uniqueSubdomains = [...new Set(subdomains)];
 
-    console.log('API get-tenants: Processed tenants from "tenants" collection:', uniqueTenantIds);
-    return NextResponse.json({ tenantIds: uniqueTenantIds });
+    console.log('API get-tenants: Processed subdomains from "tenants" collection:', uniqueSubdomains);
+    // Aunque obtenemos subdominios, mantenemos el nombre de la propiedad 'tenantIds'
+    // para no romper el middleware que espera este nombre. El middleware lo tratará como la lista de subdominios válidos.
+    return NextResponse.json({ tenantIds: uniqueSubdomains });
 
   } catch (error) {
     console.error('API get-tenants: Error fetching from "tenants" collection:', error);

@@ -23,6 +23,7 @@ export interface User extends DocumentData {
   name: string; 
   tenantId: string; 
   role: string;
+  subdomain?: string; // NUEVO: Se añade el subdominio aquí para fácil acceso.
   createdAt?: string;
 }
 
@@ -92,7 +93,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return 'limit_reached';
       }
       
-      if (license.status === 'active' || license.status === 'trial') return license.status;
+      if (license.status === 'active' || license.status === 'trial') return 'active'; // Both are considered 'active' for access
 
       return 'not_configured'; 
     },
@@ -100,9 +101,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   );
 
   useEffect(() => {
-    console.log("AUTH_CONTEXT: onAuthStateChanged listener setup.");
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      console.log("AUTH_CONTEXT: onAuthStateChanged triggered. fbUser:", fbUser ? fbUser.uid : "null");
       setFirebaseUser(fbUser);
       setCurrentUser(null);
       setUserPermissions([]);
@@ -116,25 +115,47 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const userDocSnap = await getDoc(userDocRef);
 
         if (userDocSnap.exists()) {
-          const userData = userDocSnap.data() as User;
-          
-          // --- VALIDATION AND SANITIZATION OF tenantId ---
-          let tenantId = userData.tenantId;
-          // Simple validation: a valid tenantId should not contain dots, slashes, or be excessively long.
-          if (tenantId && (tenantId.includes('.') || tenantId.includes('/') || tenantId.length > 63)) {
-            console.warn(`AUTH_CONTEXT: Invalid tenantId format found for user ${fbUser.uid}: "${tenantId}". Treating as null.`);
-            toast({
-              title: "Problema de Configuración de Cuenta",
-              description: `El ID de tu organización (${tenantId}) tiene un formato inválido. Por favor, contacta a soporte.`,
-              variant: "destructive",
-              duration: 10000,
-            });
-            tenantId = ""; // Or handle as an error state
-          }
-          // --- END VALIDATION ---
+          const userData = userDocSnap.data() as Omit<User, 'id'>;
+          const userWithId = { ...userData, id: fbUser.uid };
 
-          console.log(`AUTH_CONTEXT: User data from Firestore (UID: ${fbUser.uid}, TenantID: ${tenantId}):`, userData);
-          setCurrentUser({ ...userData, id: fbUser.uid, tenantId: tenantId }); // Use sanitized tenantId
+          let finalUserData: User = { ...userWithId, tenantId: userWithId.tenantId || "" };
+
+          // --- LOGICA DE TENANT MEJORADA ---
+          if (userWithId.tenantId) {
+            const tenantDocRef = doc(db, "tenants", userWithId.tenantId);
+            const tenantDocSnap = await getDoc(tenantDocRef);
+            
+            if (tenantDocSnap.exists()) {
+              const tenantData = tenantDocSnap.data();
+              // Asumiendo que el campo es 'subdomain' o 'domain'
+              const subdomain = tenantData.subdomain || tenantData.domain;
+              if (subdomain) {
+                finalUserData.subdomain = subdomain; // Guardamos el subdominio en el objeto del usuario
+              } else {
+                 console.warn(`Tenant document ${userWithId.tenantId} does not have a 'subdomain' or 'domain' field.`);
+              }
+              
+              // Cargar info de licencia del tenant
+              const licenseDocRef = doc(db, "tenants", userWithId.tenantId, "license", "info");
+              const usersQuery = query(collection(db, "users"), where("tenantId", "==", userWithId.tenantId));
+              const [licenseDocSnap, usersSnapshot] = await Promise.all([getDoc(licenseDocRef), getDocs(usersQuery)]);
+              const currentLicense = licenseDocSnap.exists() ? (licenseDocSnap.data() as StoredLicenseInfo) : null;
+              const currentCount = usersSnapshot.size;
+              setLicenseInfo(currentLicense);
+              setUserCount(currentCount);
+              setEffectiveLicenseStatus(calculateEffectiveLicenseStatus(currentLicense, currentCount));
+            } else {
+              console.error(`Tenant document with ID ${userWithId.tenantId} not found for user ${fbUser.uid}.`);
+              setEffectiveLicenseStatus('not_configured');
+            }
+          } else {
+            console.log("AUTH_CONTEXT: User has no tenantId. Treating as active license for base domain access.");
+            setEffectiveLicenseStatus('active');
+            setLicenseInfo(null);
+            setUserCount(null);
+          }
+          
+          setCurrentUser(finalUserData);
 
           if (userData.role) {
             const roleDocRef = doc(db, "roles", userData.role);
@@ -142,34 +163,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             if (roleDocSnap.exists()) {
               setUserPermissions(roleDocSnap.data()?.permissions || []);
             }
-          }
-
-          if (tenantId) {
-            const licenseDocRef = doc(db, "tenants", tenantId, "license", "info");
-            const usersQuery = query(collection(db, "users"), where("tenantId", "==", tenantId));
-            
-            try {
-              const [licenseDocSnap, usersSnapshot] = await Promise.all([
-                getDoc(licenseDocRef),
-                getDocs(usersQuery),
-              ]);
-
-              const currentLicense = licenseDocSnap.exists() ? (licenseDocSnap.data() as StoredLicenseInfo) : null;
-              const currentCount = usersSnapshot.size;
-              setLicenseInfo(currentLicense);
-              setUserCount(currentCount);
-              setEffectiveLicenseStatus(calculateEffectiveLicenseStatus(currentLicense, currentCount));
-              console.log(`AUTH_CONTEXT: Tenant ${tenantId} - License:`, currentLicense, `User Count: ${currentCount}`);
-
-            } catch (error) {
-              console.error(`Error fetching tenant data for ${tenantId}:`, error);
-              setEffectiveLicenseStatus('not_configured');
-            }
-          } else {
-             console.log("AUTH_CONTEXT: User has no valid tenantId. Treating as active license for base domain access.");
-             setEffectiveLicenseStatus('active'); 
-             setLicenseInfo(null);
-             setUserCount(null);
           }
         } else {
           console.error(`AUTH_CONTEXT: User document not found for UID: ${fbUser.uid}`);
@@ -180,16 +173,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setLoading(false);
     });
 
-    return () => {
-      console.log("AUTH_CONTEXT: onAuthStateChanged cleanup.");
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, [toast, calculateEffectiveLicenseStatus]);
 
   const login = async (email: string, pass: string): Promise<FirebaseUser | null> => {
     try {
       const uc = await signInWithEmailAndPassword(auth, email, pass);
-      console.log("AUTH_CONTEXT: Firebase Auth login successful.");
       return uc.user;
     } catch (e: any) {
       console.error("AUTH_CONTEXT: Firebase Auth login failed:", e);
@@ -238,7 +227,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const logout = async () => {
-    console.log("AUTH_CONTEXT: logout.");
     await firebaseSignOut(auth);
   };
   
