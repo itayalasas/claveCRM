@@ -10,9 +10,11 @@ import {
   updateProfile,
   signOut as firebaseSignOut,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, collection, getDocs, query, where, DocumentData, Timestamp, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, getDocs, query, where, DocumentData, Timestamp, onSnapshot, writeBatch, arrayUnion, arrayRemove, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
+import { generateInitialsAvatar, dataUriToBlob, getRandomColor, getUserInitials } from "@/lib/utils";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 
 
 export interface User extends DocumentData {
@@ -55,8 +57,9 @@ interface AuthContextType {
   hasPermission: (permission: string) => boolean;
   unreadInboxCount: number | null;
   isLoadingUnreadCount: boolean;
-  getAllUsers: () => Promise<User[]>; // For centralizing user fetching
+  getAllUsers: () => Promise<User[]>;
   updateUserInFirestore: (userId: string, data: Partial<User>, adminUser: User | null) => Promise<void>;
+  deleteUserInFirestore: (userId: string, adminUser: User | null) => Promise<void>; // Added delete function
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -80,7 +83,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (license.status === 'cancelled') return 'cancelled';
       
       const expiryDate = license.expiryDate;
-      if (expiryDate && (expiryDate instanceof Timestamp ? expiryDate.toDate() : new Date(expiryDate)) < new Date()) {
+      if (expiryDate && (expiryDate instanceof Timestamp ? expiryDate.toDate() : new Date(expiryDate as string)) < new Date()) {
         return 'expired';
       }
 
@@ -170,7 +173,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, [toast, calculateEffectiveLicenseStatus]);
 
   const login = async (email: string, pass: string): Promise<FirebaseUser | null> => {
-    // isLoading is now set in the useEffect hook observing auth state
     try {
       const uc = await signInWithEmailAndPassword(auth, email, pass);
       console.log("AUTH_CONTEXT: Firebase Auth login successful.");
@@ -180,9 +182,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       let errorMessage = "Ocurrió un error inesperado.";
       if (e.code === 'auth/user-not-found' || e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
         errorMessage = "Correo electrónico o contraseña incorrectos.";
+      } else if (e.code === 'auth/too-many-requests') {
+        errorMessage = "Demasiados intentos de inicio de sesión fallidos. Por favor, espera unos minutos e inténtalo de nuevo.";
       }
       toast({ title: "Error de Inicio de Sesión", description: errorMessage, variant: "destructive" });
-      throw e; // Re-throw to be caught in the component
+      throw e; 
     }
   };
 
@@ -252,10 +256,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
     await setDoc(userToUpdateRef, data, { merge: true });
   };
+  
+  const deleteUserInFirestore = async (userId: string, adminUser: User | null) => {
+    if (!adminUser || !adminUser.tenantId) throw new Error("Acción no permitida: Administrador sin tenantId.");
+    const userToDeleteRef = doc(db, 'users', userId);
+    const userToDeleteSnap = await getDoc(userToDeleteRef);
+    if (!userToDeleteSnap.exists() || userToDeleteSnap.data().tenantId !== adminUser.tenantId) {
+        throw new Error("No puedes eliminar usuarios de otra organización.");
+    }
+    await deleteDoc(userToDeleteRef);
+  };
 
 
   return (
-    <AuthContext.Provider value={{ currentUser, firebaseUser, loading, isUserDataLoaded, userPermissions, licenseInfo, effectiveLicenseStatus, userCount, login, signup, logout, hasPermission, unreadInboxCount, isLoadingUnreadCount, getAllUsers, updateUserInFirestore }}>
+    <AuthContext.Provider value={{ currentUser, firebaseUser, loading, isUserDataLoaded, userPermissions, licenseInfo, effectiveLicenseStatus, userCount, login, signup, logout, hasPermission, unreadInboxCount, isLoadingUnreadCount, getAllUsers, updateUserInFirestore, deleteUserInFirestore }}>
       {children}
     </AuthContext.Provider>
   );
@@ -267,3 +281,5 @@ export const useAuth = (): AuthContextType => {
   return ctx;
 };
 export const useAuthUnsafe = (): AuthContextType | undefined => useContext(AuthContext);
+
+    
