@@ -20,8 +20,8 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "fire
 export interface User extends DocumentData {
   id: string;
   email: string;
-  name: string; // Changed to required
-  tenantId: string; // Changed to required
+  name: string; 
+  tenantId: string; 
   role: string;
   createdAt?: string;
 }
@@ -34,7 +34,7 @@ export interface Role extends DocumentData {
 
 export interface StoredLicenseInfo extends DocumentData {
   status: 'active' | 'expired' | 'trial' | 'cancelled' | 'not_configured' | string;
-  expiryDate?: Timestamp | string; // Allow both Timestamp and string for flexibility
+  expiryDate?: Timestamp | string;
   maxUsersAllowed?: number;
   type?: string;
   licenseKey?: string;
@@ -59,7 +59,7 @@ interface AuthContextType {
   isLoadingUnreadCount: boolean;
   getAllUsers: () => Promise<User[]>;
   updateUserInFirestore: (userId: string, data: Partial<User>, adminUser: User | null) => Promise<void>;
-  deleteUserInFirestore: (userId: string, adminUser: User | null) => Promise<void>; // Added delete function
+  deleteUserInFirestore: (userId: string, adminUser: User | null) => Promise<void>; 
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -94,7 +94,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       
       if (license.status === 'active' || license.status === 'trial') return license.status;
 
-      return 'not_configured'; // Fallback for other non-active statuses
+      return 'not_configured'; 
     },
     []
   );
@@ -117,9 +117,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         if (userDocSnap.exists()) {
           const userData = userDocSnap.data() as User;
-          const tenantId = userData.tenantId;
+          
+          // --- VALIDATION AND SANITIZATION OF tenantId ---
+          let tenantId = userData.tenantId;
+          // Simple validation: a valid tenantId should not contain dots, slashes, or be excessively long.
+          if (tenantId && (tenantId.includes('.') || tenantId.includes('/') || tenantId.length > 63)) {
+            console.warn(`AUTH_CONTEXT: Invalid tenantId format found for user ${fbUser.uid}: "${tenantId}". Treating as null.`);
+            toast({
+              title: "Problema de Configuración de Cuenta",
+              description: `El ID de tu organización (${tenantId}) tiene un formato inválido. Por favor, contacta a soporte.`,
+              variant: "destructive",
+              duration: 10000,
+            });
+            tenantId = ""; // Or handle as an error state
+          }
+          // --- END VALIDATION ---
+
           console.log(`AUTH_CONTEXT: User data from Firestore (UID: ${fbUser.uid}, TenantID: ${tenantId}):`, userData);
-          setCurrentUser({ ...userData, id: fbUser.uid });
+          setCurrentUser({ ...userData, id: fbUser.uid, tenantId: tenantId }); // Use sanitized tenantId
 
           if (userData.role) {
             const roleDocRef = doc(db, "roles", userData.role);
@@ -151,8 +166,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               setEffectiveLicenseStatus('not_configured');
             }
           } else {
-             // Handle users without a tenantId (e.g., system admins on base domain)
-             console.log("AUTH_CONTEXT: User has no tenantId. Treating as active license for base domain access.");
+             console.log("AUTH_CONTEXT: User has no valid tenantId. Treating as active license for base domain access.");
              setEffectiveLicenseStatus('active'); 
              setLicenseInfo(null);
              setUserCount(null);
@@ -229,7 +243,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
   
   const hasPermission = useCallback((p: string): boolean => {
-    if (userPermissions.includes('admin')) return true; // Super-admin override
+    if (userPermissions.includes('admin')) return true; 
     return userPermissions.includes(p);
   }, [userPermissions]);
 
@@ -281,5 +295,3 @@ export const useAuth = (): AuthContextType => {
   return ctx;
 };
 export const useAuthUnsafe = (): AuthContextType | undefined => useContext(AuthContext);
-
-    
