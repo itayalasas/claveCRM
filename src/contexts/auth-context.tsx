@@ -116,26 +116,34 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         if (userDocSnap.exists()) {
           const userData = userDocSnap.data() as Omit<User, 'id'>;
-          const userWithId = { ...userData, id: fbUser.uid };
+          let userWithId = { ...userData, id: fbUser.uid };
 
           let finalUserData: User = { ...userWithId, tenantId: userWithId.tenantId || "" };
 
-          // --- LOGICA DE TENANT MEJORADA ---
+          // --- REVISED TENANT LOGIC ---
           if (userWithId.tenantId) {
+            const baseDomain = (process.env.NEXT_PUBLIC_BASE_URL || '').replace(/:\d+$/, ''); // Remove port for comparison
+            
+            // Check if user's tenantId is the same as the base domain.
+            if (userWithId.tenantId.toLowerCase() === baseDomain.toLowerCase()) {
+              console.log("AuthContext: User tenant matches base domain. No subdomain needed.");
+              // No subdomain is set. User will access the main URL.
+            } else {
+              // The tenantId is a different domain. Extract the first part as the subdomain.
+              const parts = userWithId.tenantId.split('.');
+              const subdomain = parts[0];
+              if (subdomain) {
+                finalUserData.subdomain = subdomain;
+                 console.log(`AuthContext: User tenant is different. Setting subdomain to: ${subdomain}`);
+              } else {
+                 console.warn(`AuthContext: Could not extract a valid subdomain from tenantId: ${userWithId.tenantId}`);
+              }
+            }
+
             const tenantDocRef = doc(db, "tenants", userWithId.tenantId);
             const tenantDocSnap = await getDoc(tenantDocRef);
             
             if (tenantDocSnap.exists()) {
-              const tenantData = tenantDocSnap.data();
-              // Asumiendo que el campo es 'subdomain' o 'domain'
-              const subdomain = tenantData.subdomain || tenantData.domain;
-              if (subdomain) {
-                finalUserData.subdomain = subdomain; // Guardamos el subdominio en el objeto del usuario
-              } else {
-                 console.warn(`Tenant document ${userWithId.tenantId} does not have a 'subdomain' or 'domain' field.`);
-              }
-              
-              // Cargar info de licencia del tenant
               const licenseDocRef = doc(db, "tenants", userWithId.tenantId, "license", "info");
               const usersQuery = query(collection(db, "users"), where("tenantId", "==", userWithId.tenantId));
               const [licenseDocSnap, usersSnapshot] = await Promise.all([getDoc(licenseDocRef), getDocs(usersQuery)]);
@@ -149,8 +157,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               setEffectiveLicenseStatus('not_configured');
             }
           } else {
-            console.log("AUTH_CONTEXT: User has no tenantId. Treating as active license for base domain access.");
-            setEffectiveLicenseStatus('active');
+             console.log("AuthContext: User has no tenantId. Accessing base domain features.");
+            setEffectiveLicenseStatus('active'); // Default to active for base domain users without specific tenant logic
             setLicenseInfo(null);
             setUserCount(null);
           }
@@ -186,7 +194,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (e.code === 'auth/user-not-found' || e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
         errorMessage = "Correo electrónico o contraseña incorrectos.";
       } else if (e.code === 'auth/too-many-requests') {
-        errorMessage = "Demasiados intentos de inicio de sesión fallidos. Por favor, espera unos minutos e inténtalo de nuevo.";
+        errorMessage = "Demasiados intentos de inicio de sesión fallidos. Has sido bloqueado temporalmente. Por favor, espera unos minutos e inténtalo de nuevo.";
       }
       toast({ title: "Error de Inicio de Sesión", description: errorMessage, variant: "destructive" });
       throw e; 

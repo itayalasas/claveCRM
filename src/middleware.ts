@@ -1,7 +1,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 
-const BASE_HOST = process.env.NEXT_PUBLIC_BASE_URL || 'localhost:9000';
+const BASE_HOST = (process.env.NEXT_PUBLIC_BASE_URL || 'localhost').replace(/:\d+$/, '');
 
 // Cache for tenant IDs and timestamp of the last fetch
 let cachedTenantIds: string[] | null = null;
@@ -46,12 +46,8 @@ async function fetchProcessedTenantIds(request: NextRequest): Promise<string[]> 
 
 export async function middleware(request: NextRequest) {
   const url = request.nextUrl.clone();
-  let hostname = request.headers.get('host') || BASE_HOST;
+  let hostname = (request.headers.get('host') || BASE_HOST).replace(/:\d+$/, '');
 
-  if (hostname.includes(':') && !BASE_HOST.includes(':')) {
-    hostname = hostname.split(':')[0];
-  }
-  
   console.log(`Middleware: Processing request for hostname: ${hostname}`);
 
   // Exclude API routes and static assets from tenant logic
@@ -70,7 +66,7 @@ export async function middleware(request: NextRequest) {
   const parts = hostname.replace(`.${BASE_HOST}`, '').split('.');
   let tenantId: string | null = null;
   
-  if (hostname === BASE_HOST || parts[0] === 'www' || hostname.endsWith(process.env.NEXT_PUBLIC_VERCEL_URL || 'nevermatchthis.com')) {
+  if (hostname === BASE_HOST || parts[0] === 'www' || (process.env.NEXT_PUBLIC_VERCEL_URL && hostname.endsWith(process.env.NEXT_PUBLIC_VERCEL_URL))) {
     console.log(`Middleware: Accessing base domain or Vercel preview: ${hostname}`);
   } else if (parts.length > 0 && parts[0] !== BASE_HOST.split('.')[0] && parts[0] !== '') {
     tenantId = parts[0];
@@ -92,9 +88,6 @@ export async function middleware(request: NextRequest) {
     requestHeaders.delete('x-tenant-id'); 
     console.log(`Middleware: No x-tenant-id header set.`);
   }
-
-  // Rewrite the URL to include the tenant as a query parameter or path segment if needed by your app logic,
-  // or just pass the header. For now, we'll just pass the header.
   
   return NextResponse.next({
     request: {
@@ -105,6 +98,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };

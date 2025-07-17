@@ -24,24 +24,21 @@ export default function LoginPage() {
   const logoSrc = "/clave-crm-logo.png";
 
   useEffect(() => {
-    // This effect handles redirection *after* a user state change is detected by the context.
     if (isUserDataLoaded && currentUser) {
-      console.log("Login Page: User is loaded and authenticated. Checking for subdomain for redirection.");
-      // AHORA USAMOS EL SUBDOMAIN DIRECTAMENTE DEL OBJETO DEL USUARIO
+      console.log("Login Page: User is loaded and authenticated. Checking for redirection.");
+      
       const { subdomain } = currentUser;
       
-      const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL || window.location.host).replace(/^https?:\/\//, '');
-
-      if (subdomain && baseUrl) {
+      if (subdomain) {
+        // Construct the tenant URL, ensuring the base URL is clean.
+        const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL || window.location.host).replace(/^https?:\/\//, '').replace(/:\d+$/, '');
         const tenantUrl = `https://${subdomain}.${baseUrl}/dashboard`;
         console.log(`Login Page: Redirecting to tenant URL: ${tenantUrl}`);
         window.location.href = tenantUrl;
-      } else if (!subdomain) {
+      } else {
+        // No subdomain means user belongs to the base domain. Redirect to local dashboard.
         console.log("Login Page: User has no subdomain. Redirecting to /dashboard on main domain.");
         router.push("/dashboard");
-      } else {
-        toast({ title: "Error de Configuración", description: "No se pudo determinar la URL de tu organización. Falta la variable de entorno NEXT_PUBLIC_BASE_URL.", variant: "destructive"});
-        setIsLoading(false);
       }
     } else if (isUserDataLoaded && !currentUser) {
         setIsLoading(false);
@@ -53,6 +50,7 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       await login(email, password);
+      // The useEffect above will handle redirection upon successful state change.
     } catch (error: any) {
       console.error("Login Page: handleLogin caught an error:", error);
       setIsLoading(false);

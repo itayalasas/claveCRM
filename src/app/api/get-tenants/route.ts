@@ -34,23 +34,30 @@ export async function GET(request: Request) {
 
     if (tenantsSnapshot.empty) {
       console.log('API get-tenants: No documents found in "tenants" collection.');
-      return NextResponse.json({ tenantIds: [] }); // Mantener el nombre de la propiedad por consistencia
+      return NextResponse.json({ tenantIds: [] });
     }
+
+    const baseDomain = (process.env.NEXT_PUBLIC_BASE_URL || '').replace(/:\d+$/, '');
 
     tenantsSnapshot.forEach(doc => {
       const data = doc.data();
-      // Asumimos que el subdominio está en un campo llamado 'subdomain' o 'domain'
-      const subdomain = data.subdomain || data.domain; 
-      if (subdomain && typeof subdomain === 'string') {
-        subdomains.push(subdomain);
+      const tenantDomain = data.domain as string; 
+      
+      if (tenantDomain && typeof tenantDomain === 'string' && tenantDomain.toLowerCase() !== baseDomain.toLowerCase()) {
+        const subdomain = tenantDomain.split('.')[0];
+        if (subdomain && subdomain.toLowerCase() !== 'www') {
+           subdomains.push(subdomain);
+        }
+      } else {
+        // This includes cases where tenantDomain matches baseDomain, which we don't treat as a subdomain.
+        console.log(`API get-tenants: Document ${doc.id} has a domain that is the base domain or is invalid. Skipping.`);
       }
     });
     
     const uniqueSubdomains = [...new Set(subdomains)];
 
-    console.log('API get-tenants: Processed subdomains from "tenants" collection:', uniqueSubdomains);
-    // Aunque obtenemos subdominios, mantenemos el nombre de la propiedad 'tenantIds'
-    // para no romper el middleware que espera este nombre. El middleware lo tratará como la lista de subdominios válidos.
+    console.log('API get-tenants: Processed valid subdomains from "tenants" collection:', uniqueSubdomains);
+    // The middleware expects a list of valid subdomains (which it calls tenantIds for simplicity).
     return NextResponse.json({ tenantIds: uniqueSubdomains });
 
   } catch (error) {
