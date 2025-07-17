@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { AlertTriangle, ShieldAlert, KeyRound, ExternalLink, Settings, XCircle, LogIn } from "lucide-react"; 
 import { Skeleton } from "@/components/ui/skeleton";
 import { SidebarProvider } from "@/components/ui/sidebar"; 
-import { headers } from "next/headers";
 
 function LicenseAccessDeniedBlock({ status, isAdmin, forBaseDomain }: { status: string, isAdmin: boolean, forBaseDomain?: boolean }) {
   let title = "Acceso Denegado por Licencia";
@@ -61,9 +60,7 @@ function LicenseAccessDeniedBlock({ status, isAdmin, forBaseDomain }: { status: 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { currentUser, effectiveLicenseStatus, loading, isUserDataLoaded, hasPermission, tenantId: tenantIdFromContext } = useAuth();
   const pathname = usePathname();
-  const headersList = headers();
-  const tenantIdFromHeader = headersList.get('x-tenant-id');
-
+  
   const userCanManageLicense = currentUser ? hasPermission('gestionar-licencia') : false;
   const isAdminOnLicensePage = userCanManageLicense && pathname === '/settings/license';
   
@@ -75,10 +72,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!currentUser && tenantIdFromHeader) {
+  if (!currentUser && tenantIdFromContext) {
       // Visiting a tenant URL but not logged in. Let the login page handle it.
       // Do nothing here, allow children (login page) to render.
-  } else if (!currentUser && !tenantIdFromHeader) {
+  } else if (!currentUser && !tenantIdFromContext) {
       // On base domain and not logged in.
       // This is okay for pages like /login, but might need adjustment for others.
       // For simplicity, we let pages handle their own auth checks.
@@ -87,7 +84,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       if (hasLicenseProblem && !isAdminOnLicensePage) {
           return <LicenseAccessDeniedBlock status={effectiveLicenseStatus} isAdmin={userCanManageLicense} />;
       }
-      if (!tenantIdFromHeader && currentUser.tenantId) {
+      if (!tenantIdFromContext && currentUser.tenantId) {
           return <LicenseAccessDeniedBlock status="" isAdmin={userCanManageLicense} forBaseDomain={true} />;
       }
   }
