@@ -16,14 +16,15 @@ import { Loader2 } from "lucide-react";
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const { login, currentUser, isUserDataLoaded } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { login, currentUser, isUserDataLoaded, loading: authLoading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
   const logoSrc = "/clave-crm-logo.png";
 
   useEffect(() => {
+    // This effect handles redirection AFTER the user data is confirmed to be loaded.
     if (isUserDataLoaded && currentUser) {
       console.log("Login Page: User is loaded and authenticated. Checking for redirection.");
       
@@ -40,22 +41,23 @@ export default function LoginPage() {
         console.log("Login Page: User has no subdomain. Redirecting to /dashboard on main domain.");
         router.push("/dashboard");
       }
-    } else if (isUserDataLoaded && !currentUser) {
-        setIsLoading(false);
     }
   }, [currentUser, isUserDataLoaded, router, toast]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
+    setIsSubmitting(true);
     try {
       await login(email, password);
       // The useEffect above will handle redirection upon successful state change.
+      // We don't set isSubmitting to false here, because we expect a page transition.
     } catch (error: any) {
       console.error("Login Page: handleLogin caught an error:", error);
-      setIsLoading(false);
+      setIsSubmitting(false); // Only set to false on error, so user can try again.
     }
   };
+
+  const isLoading = authLoading || (isSubmitting && !isUserDataLoaded);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen py-12">

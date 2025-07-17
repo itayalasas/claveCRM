@@ -16,7 +16,6 @@ import { useToast } from '@/hooks/use-toast';
 import { generateInitialsAvatar, dataUriToBlob, getRandomColor, getUserInitials } from "@/lib/utils";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 
-
 export interface User extends DocumentData {
   id: string;
   email: string;
@@ -93,7 +92,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return 'limit_reached';
       }
       
-      if (license.status === 'active' || license.status === 'trial') return 'active'; // Both are considered 'active' for access
+      if (license.status === 'active' || license.status === 'trial') return 'active';
 
       return 'not_configured'; 
     },
@@ -116,34 +115,26 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         if (userDocSnap.exists()) {
           const userData = userDocSnap.data() as Omit<User, 'id'>;
-          let userWithId = { ...userData, id: fbUser.uid };
+          let userWithId: User = { ...userData, id: fbUser.uid, tenantId: userData.tenantId || "" };
 
-          let finalUserData: User = { ...userWithId, tenantId: userWithId.tenantId || "" };
-
-          // --- REVISED TENANT LOGIC ---
           if (userWithId.tenantId) {
-            const baseDomain = (process.env.NEXT_PUBLIC_BASE_URL || '').replace(/:\d+$/, ''); // Remove port for comparison
-            
-            // Check if user's tenantId is the same as the base domain.
-            if (userWithId.tenantId.toLowerCase() === baseDomain.toLowerCase()) {
-              console.log("AuthContext: User tenant matches base domain. No subdomain needed.");
-              // No subdomain is set. User will access the main URL.
-            } else {
-              // The tenantId is a different domain. Extract the first part as the subdomain.
-              const parts = userWithId.tenantId.split('.');
-              const subdomain = parts[0];
-              if (subdomain) {
-                finalUserData.subdomain = subdomain;
-                 console.log(`AuthContext: User tenant is different. Setting subdomain to: ${subdomain}`);
-              } else {
-                 console.warn(`AuthContext: Could not extract a valid subdomain from tenantId: ${userWithId.tenantId}`);
-              }
-            }
-
             const tenantDocRef = doc(db, "tenants", userWithId.tenantId);
             const tenantDocSnap = await getDoc(tenantDocRef);
             
             if (tenantDocSnap.exists()) {
+              const tenantData = tenantDocSnap.data();
+              const tenantDomain = tenantData.domain as string; // e.g., "pedro.clavecrm.com" or "clavecrm.com"
+              
+              if (tenantDomain) {
+                const baseDomain = (process.env.NEXT_PUBLIC_BASE_URL || '').replace(/:\d+$/, '');
+                if (tenantDomain.toLowerCase() !== baseDomain.toLowerCase()) {
+                  const subdomain = tenantDomain.split('.')[0];
+                  if (subdomain && subdomain.toLowerCase() !== 'www') {
+                    userWithId.subdomain = subdomain;
+                  }
+                }
+              }
+              
               const licenseDocRef = doc(db, "tenants", userWithId.tenantId, "license", "info");
               const usersQuery = query(collection(db, "users"), where("tenantId", "==", userWithId.tenantId));
               const [licenseDocSnap, usersSnapshot] = await Promise.all([getDoc(licenseDocRef), getDocs(usersQuery)]);
@@ -157,13 +148,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               setEffectiveLicenseStatus('not_configured');
             }
           } else {
-             console.log("AuthContext: User has no tenantId. Accessing base domain features.");
-            setEffectiveLicenseStatus('active'); // Default to active for base domain users without specific tenant logic
+            console.log("AuthContext: User has no tenantId. Accessing base domain features.");
+            setEffectiveLicenseStatus('active'); 
             setLicenseInfo(null);
             setUserCount(null);
           }
           
-          setCurrentUser(finalUserData);
+          setCurrentUser(userWithId);
 
           if (userData.role) {
             const roleDocRef = doc(db, "roles", userData.role);
@@ -276,7 +267,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
     await deleteDoc(userToDeleteRef);
   };
-
 
   return (
     <AuthContext.Provider value={{ currentUser, firebaseUser, loading, isUserDataLoaded, userPermissions, licenseInfo, effectiveLicenseStatus, userCount, login, signup, logout, hasPermission, unreadInboxCount, isLoadingUnreadCount, getAllUsers, updateUserInFirestore, deleteUserInFirestore }}>
