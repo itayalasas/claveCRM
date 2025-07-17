@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 216 28% 95%; /* #F2F4F7 Light Grey */
+    --foreground: 222.2 47.4% 11.2%; /* Dark blue/grey for text */
+    
+    --card: 0 0% 100%; /* White */
+    --card-foreground: 222.2 47.4% 11.2%;
+    
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 47.4% 11.2%;
+    
+    --primary: 205 50% 35%; /* Dark Blue/Teal from ClaveCRM logo */
+    --primary-foreground: 0 0% 100%; /* White text on dark blue */
+    
+    --secondary: 216 28% 90%; /* Slightly darker grey */
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    
+    --muted: 216 28% 85%; /* Muted grey, slightly lighter than secondary for less emphasis */
+    --muted-foreground: 222.2 47.4% 30%; /* Muted text color */
+    
+    --accent: 145 63% 42%; /* Vibrant Green from ClaveCRM logo */
+    --accent-foreground: 0 0% 100%; /* White text on green accent */
+    
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    
+    --border: 216 20% 80%;
+    --input: 216 20% 88%;
+    --ring: 205 50% 45%; /* Adjusted ring to match new primary */
+    
+    --radius: 0.5rem;
+
+    /* Chart colors */
+    --chart-1: 205 50% 35%; /* Primary Blue/Teal */
+    --chart-2: 145 63% 42%; /* Accent Green */
+    --chart-3: 43 74% 66%; /* Orange-Yellow */
+    --chart-4: 27 87% 67%; /* Coral */
+    --chart-5: 280 65% 60%; /* Purple */
+
+    /* Sidebar specific theme */
+    --sidebar-background: 0 0% 100%; /* White sidebar */
+    --sidebar-foreground: 222.2 47.4% 11.2%; /* Dark text */
+    --sidebar-primary: 205 50% 35%; /* Blue/Teal for active items */
+    --sidebar-primary-foreground: 0 0% 100%; /* White text on active */
+    --sidebar-accent: 216 28% 95%; /* Light grey for hover */
+    --sidebar-accent-foreground: 205 50% 35%; /* Blue/Teal text on hover */
+    --sidebar-border: 216 20% 85%;
+    --sidebar-ring: 205 50% 45%;
+  }
+
+  .dark {
+    --background: 222.2 47.4% 11.2%; /* Dark Blue/Grey */
+    --foreground: 210 40% 98%; /* Light text */
+    
+    --card: 222.2 47.4% 15%; /* Dark card */
+    --card-foreground: 210 40% 98%;
+    
+    --popover: 222.2 47.4% 11.2%;
+    --popover-foreground: 210 40% 98%;
+    
+    --primary: 205 50% 45%; /* Lighter Blue/Teal for dark theme primary */
+    --primary-foreground: 0 0% 100%; 
+    
+    --secondary: 216 28% 20%; /* Darker grey */
+    --secondary-foreground: 210 40% 98%;
+    
+    --muted: 216 28% 25%;
+    --muted-foreground: 210 40% 70%;
+    
+    --accent: 145 63% 52%; /* Lighter Green for dark theme accent */
+    --accent-foreground: 0 0% 0%; /* Dark text on lighter green accent */
+    
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    
+    --border: 216 20% 30%;
+    --input: 216 20% 25%;
+    --ring: 205 50% 55%; /* Adjusted ring for dark theme */
+
+    /* Chart colors - dark theme */
+    --chart-1: 205 50% 45%; 
+    --chart-2: 145 63% 52%;
+    --chart-3: 43 74% 56%;
+    --chart-4: 27 87% 57%;
+    --chart-5: 280 65% 50%;
+
+    /* Sidebar specific theme - dark */
+    --sidebar-background: 222.2 47.4% 9%; /* Very dark sidebar */
+    --sidebar-foreground: 210 40% 98%; /* Light text */
+    --sidebar-primary: 205 50% 45%; /* Lighter Blue/Teal for active items */
+    --sidebar-primary-foreground: 0 0% 100%; 
+    --sidebar-accent: 216 28% 15%; /* Dark grey for hover */
+    --sidebar-accent-foreground: 205 50% 45%; /* Lighter Blue/Teal text on hover */
+    --sidebar-border: 216 20% 25%;
+    --sidebar-ring: 205 50% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1; /* Enable common ligatures and contextual alternates */
+  }
+}
