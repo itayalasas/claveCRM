@@ -20,7 +20,6 @@ if (!getApps().length) {
     }
   } catch (e: any) {
     console.error("API get-tenants: CRITICAL error initializing Firebase Admin SDK:", e.message);
-    // In a real scenario, this might cause the API to consistently fail.
   }
 } else {
   adminApp = getApps()[0];
@@ -30,28 +29,29 @@ const db = getFirestore(adminApp!);
 
 export async function GET(request: Request) {
   try {
-    const tenantsSnapshot = await db.collection('users').where('tenantId', '!=', null).get();
+    const tenantsSnapshot = await db.collection('tenants').get();
     const tenantIds: string[] = [];
 
     if (tenantsSnapshot.empty) {
-      console.log('API get-tenants: No users with tenantId found in Firestore.');
+      console.log('API get-tenants: No documents found in "tenants" collection.');
       return NextResponse.json({ tenantIds: [] });
     }
 
     tenantsSnapshot.forEach(doc => {
-      const data = doc.data();
-      const tenantId = data.tenantId as string; 
-
-      if (tenantId && !tenantIds.includes(tenantId)) {
-        tenantIds.push(tenantId);
+      // The document ID itself is the tenantId
+      const tenantId = doc.id;
+      if (tenantId) {
+          tenantIds.push(tenantId);
       }
     });
+    
+    const uniqueTenantIds = [...new Set(tenantIds)];
 
-    console.log('API get-tenants: Processed tenants from users collection:', tenantIds);
-    return NextResponse.json({ tenantIds });
+    console.log('API get-tenants: Processed tenants from "tenants" collection:', uniqueTenantIds);
+    return NextResponse.json({ tenantIds: uniqueTenantIds });
 
   } catch (error) {
-    console.error('API get-tenants: Error fetching tenants from users collection:', error);
+    console.error('API get-tenants: Error fetching from "tenants" collection:', error);
     let errorMessage = 'Internal Server Error';
     if (error instanceof Error) {
         errorMessage = error.message;
