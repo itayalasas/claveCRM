@@ -22,7 +22,7 @@ export interface User extends DocumentData {
   name: string; 
   tenantId: string; 
   role: string;
-  subdomain?: string; // NUEVO: Se añade el subdominio aquí para fácil acceso.
+  subdomain?: string; // Subdominio extraído para redirección (ej. "pedro")
   createdAt?: string;
 }
 
@@ -59,7 +59,8 @@ interface AuthContextType {
   isLoadingUnreadCount: boolean;
   getAllUsers: () => Promise<User[]>;
   updateUserInFirestore: (userId: string, data: Partial<User>, adminUser: User | null) => Promise<void>;
-  deleteUserInFirestore: (userId: string, adminUser: User | null) => Promise<void>; 
+  deleteUserInFirestore: (userId: string, adminUser: User | null) => Promise<void>;
+  tenantId: string | null; // El tenantId del usuario
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -76,6 +77,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [userCount, setUserCount] = useState<number | null>(null);
   const [unreadInboxCount, setUnreadInboxCount] = useState<number | null>(0);
   const [isLoadingUnreadCount, setIsLoadingUnreadCount] = useState(true);
+  const [tenantId, setTenantId] = useState<string | null>(null);
 
   const calculateEffectiveLicenseStatus = useCallback(
     (license: StoredLicenseInfo | null, count: number | null) => {
@@ -117,45 +119,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           const userData = userDocSnap.data() as Omit<User, 'id'>;
           let userWithId: User = { ...userData, id: fbUser.uid, tenantId: userData.tenantId || "" };
 
+          setTenantId(userWithId.tenantId); // Guardar tenantId
+
+          // Lógica para determinar el subdominio
           if (userWithId.tenantId) {
+            const baseDomain = (process.env.NEXT_PUBLIC_BASE_URL || 'localhost').replace(/:\d+$/, '');
+            
             const tenantDocRef = doc(db, "tenants", userWithId.tenantId);
             const tenantDocSnap = await getDoc(tenantDocRef);
             
             if (tenantDocSnap.exists()) {
               const tenantData = tenantDocSnap.data();
-              const tenantDomain = tenantData.domain as string; // e.g., "pedro.clavecrm.com" or "clavecrm.com"
+              const tenantDomain = tenantData.domain as string; // ej. "ayalait.uy"
               
-              if (tenantDomain) {
-                const baseDomain = (process.env.NEXT_PUBLIC_BASE_URL || '').replace(/:\d+$/, '');
-                if (tenantDomain.toLowerCase() !== baseDomain.toLowerCase()) {
-                  const subdomain = tenantDomain.split('.')[0];
-                  if (subdomain && subdomain.toLowerCase() !== 'www') {
-                    userWithId.subdomain = subdomain;
-                  }
-                }
+              if (tenantDomain && tenantDomain.toLowerCase() !== baseDomain.toLowerCase()) {
+                userWithId.subdomain = tenantDomain.split('.')[0]; // ej. "ayalait"
               }
-              
-              const licenseDocRef = doc(db, "tenants", userWithId.tenantId, "license", "info");
-              const usersQuery = query(collection(db, "users"), where("tenantId", "==", userWithId.tenantId));
-              const [licenseDocSnap, usersSnapshot] = await Promise.all([getDoc(licenseDocRef), getDocs(usersQuery)]);
-              const currentLicense = licenseDocSnap.exists() ? (licenseDocSnap.data() as StoredLicenseInfo) : null;
-              const currentCount = usersSnapshot.size;
-              setLicenseInfo(currentLicense);
-              setUserCount(currentCount);
-              setEffectiveLicenseStatus(calculateEffectiveLicenseStatus(currentLicense, currentCount));
-            } else {
-              console.error(`Tenant document with ID ${userWithId.tenantId} not found for user ${fbUser.uid}.`);
-              setEffectiveLicenseStatus('not_configured');
             }
-          } else {
-            console.log("AuthContext: User has no tenantId. Accessing base domain features.");
-            setEffectiveLicenseStatus('active'); 
-            setLicenseInfo(null);
-            setUserCount(null);
           }
-          
-          setCurrentUser(userWithId);
 
+          setCurrentUser(userWithId);
+          
           if (userData.role) {
             const roleDocRef = doc(db, "roles", userData.role);
             const roleDocSnap = await getDoc(roleDocRef);
@@ -165,7 +149,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           }
         } else {
           console.error(`AUTH_CONTEXT: User document not found for UID: ${fbUser.uid}`);
-          toast({ title: "Error de Perfil", description: "No se encontró tu perfil de usuario en la base de datos.", variant: "destructive" });
         }
       }
       setIsUserDataLoaded(true);
@@ -269,7 +252,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, firebaseUser, loading, isUserDataLoaded, userPermissions, licenseInfo, effectiveLicenseStatus, userCount, login, signup, logout, hasPermission, unreadInboxCount, isLoadingUnreadCount, getAllUsers, updateUserInFirestore, deleteUserInFirestore }}>
+    <AuthContext.Provider value={{ currentUser, firebaseUser, loading, isUserDataLoaded, userPermissions, licenseInfo, effectiveLicenseStatus, userCount, login, signup, logout, hasPermission, unreadInboxCount, isLoadingUnreadCount, getAllUsers, updateUserInFirestore, deleteUserInFirestore, tenantId }}>
       {children}
     </AuthContext.Provider>
   );

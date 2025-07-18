@@ -1,8 +1,8 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 
-// Limpia la URL base, eliminando protocolo y puerto.
-const BASE_HOST = (process.env.NEXT_PUBLIC_BASE_URL || 'localhost:3000').replace(/^https?:\/\//, '').replace(/:\d+$/, '');
+// Lee el dominio base desde las variables de entorno. Es la única fuente de verdad.
+const BASE_HOST = (process.env.NEXT_PUBLIC_BASE_URL || 'localhost:3000').replace(/^https?:\/\//, '');
 
 // Cache para los tenants válidos.
 let cachedTenantIds: string[] | null = null;
@@ -40,7 +40,6 @@ async function fetchValidTenantSubdomains(request: NextRequest): Promise<string[
 export async function middleware(request: NextRequest) {
   const url = request.nextUrl.clone();
   
-  // Excluir rutas de API y assets estáticos.
   if (
     url.pathname.startsWith('/api/') ||
     url.pathname.startsWith('/_next/') ||
@@ -50,33 +49,28 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Obtener hostname y limpiarlo.
   let hostname = (request.headers.get('host') || BASE_HOST).replace(/:\d+$/, '');
   
-  // Normalizar para entornos de preview de Vercel/Netlify
-  if (process.env.NEXT_PUBLIC_VERCEL_URL && hostname.endsWith(process.env.NEXT_PUBLIC_VERCEL_URL)) {
-    hostname = BASE_HOST;
-  }
-  // Normalizar para entornos de desarrollo como Firebase Studio/IDX
+  // Si el hostname es el del entorno de desarrollo, lo tratamos como el dominio base.
   if (hostname.endsWith('cloudworkstations.dev') || hostname.endsWith('app.idx.dev')) {
       hostname = BASE_HOST;
   }
 
-
   let tenantId: string | null = null;
   
-  // Lógica de detección de subdominio
-  if (hostname !== BASE_HOST) {
-    // Si el hostname NO es el dominio base, intentamos extraer el subdominio.
+  if (hostname.toLowerCase() !== BASE_HOST.toLowerCase()) {
     const potentialSubdomain = hostname.replace(`.${BASE_HOST}`, '');
     
-    // Verificar si el subdominio extraído es válido.
+    // Aquí podrías añadir una llamada a una API para validar que el subdominio existe en tu DB
+    // Por ahora, asumimos que cualquier subdominio es un tenantId potencial.
+    // Esto se gestiona mejor con una lista de tenants válidos.
     const validTenants = await fetchValidTenantSubdomains(request);
     if (validTenants.includes(potentialSubdomain)) {
-      tenantId = potentialSubdomain;
-      console.log(`Middleware: Tenant identificado: ${tenantId}`);
+        tenantId = potentialSubdomain;
+        console.log(`Middleware: Tenant identificado: ${tenantId}`);
     } else {
-      console.warn(`Middleware: Subdominio desconocido '${potentialSubdomain}'. Se tratará como dominio base.`);
+        console.warn(`Middleware: Subdominio desconocido '${potentialSubdomain}'. Redirigiendo al dominio base.`);
+        return NextResponse.redirect(new URL(url.pathname, `https://${BASE_HOST}`));
     }
   } else {
     console.log(`Middleware: Acceso al dominio base: ${hostname}`);

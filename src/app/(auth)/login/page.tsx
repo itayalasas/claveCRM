@@ -31,8 +31,8 @@ export default function LoginPage() {
       const { subdomain } = currentUser;
       
       if (subdomain) {
-        // Construct the tenant URL, ensuring the base URL is clean.
-        const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL || window.location.host).replace(/^https?:\/\//, '').replace(/:\d+$/, '');
+        // Construct the tenant URL using the environment variable.
+        const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL || window.location.host).replace(/^https?:\/\//, '');
         const tenantUrl = `https://${subdomain}.${baseUrl}/dashboard`;
         console.log(`Login Page: Redirecting to tenant URL: ${tenantUrl}`);
         window.location.href = tenantUrl;
@@ -42,7 +42,7 @@ export default function LoginPage() {
         router.push("/dashboard");
       }
     }
-  }, [currentUser, isUserDataLoaded, router, toast]);
+  }, [currentUser, isUserDataLoaded, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,7 +50,6 @@ export default function LoginPage() {
     try {
       await login(email, password);
       // The useEffect above will handle redirection upon successful state change.
-      // We don't set isSubmitting to false here, because we expect a page transition.
     } catch (error: any) {
       console.error("Login Page: handleLogin caught an error:", error);
       setIsSubmitting(false); // Only set to false on error, so user can try again.
