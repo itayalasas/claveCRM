@@ -95,29 +95,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           const userData = userDocSnap.data() as Omit<User, 'id'>;
           let userWithSubdomain: User = { ...userData, id: fbUser.uid };
 
-          setTenantId(userData.tenantId); // Guardar tenantId
+          setTenantId(userData.tenantId); // Guardar tenantId del usuario
 
           // Lógica para determinar el subdominio para redirección
           if (userData.tenantId) {
-            const baseDomain = (process.env.NEXT_PUBLIC_BASE_URL || 'localhost:3000').replace(/^https?:\/\//, '');
-            const baseDomainName = baseDomain.split('.')[0];
+            const baseHostName = (process.env.NEXT_PUBLIC_BASE_URL || 'localhost:3000').replace(/^https?:\/\//, '');
             const tenantDocRef = doc(db, "tenants", userData.tenantId);
             const tenantDocSnap = await getDoc(tenantDocRef);
-
+            
             if (tenantDocSnap.exists()) {
                 const tenantData = tenantDocSnap.data();
-                const tenantDomain = tenantData.domain as string; // ej. "pedro.ayala.com" o "clavecrm.com"
+                const tenantDomain = tenantData.domain as string; // ej: "ayalait.uy" o "clavecrm.com"
                 
-                if (tenantDomain) {
+                if (tenantDomain && tenantDomain.toLowerCase() !== baseHostName.toLowerCase()) {
+                    // Si el dominio del tenant es DIFERENTE al dominio base, extraemos el subdominio.
                     const subdomain = tenantDomain.split('.')[0];
-                    // Si el subdominio del tenant NO es el mismo que el del dominio base, lo asignamos para redirección
-                    if(subdomain.toLowerCase() !== baseDomainName.toLowerCase()) {
-                      userWithSubdomain.subdomain = subdomain;
-                    }
+                    userWithSubdomain.subdomain = subdomain;
                 }
+                // Si son iguales, userWithSubdomain.subdomain permanecerá undefined, lo cual es correcto.
             }
           }
-
+          
           setCurrentUser(userWithSubdomain);
           
           if (userData.role) {

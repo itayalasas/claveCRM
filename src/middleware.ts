@@ -40,6 +40,7 @@ async function fetchValidTenantSubdomains(request: NextRequest): Promise<string[
 export async function middleware(request: NextRequest) {
   const url = request.nextUrl.clone();
   
+  // Ignorar rutas de API, assets estáticos, etc.
   if (
     url.pathname.startsWith('/api/') ||
     url.pathname.startsWith('/_next/') ||
@@ -49,40 +50,43 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Normalizar el hostname quitando el puerto.
   let hostname = (request.headers.get('host') || BASE_HOST).replace(/:\d+$/, '');
   
-  // Si el hostname es el del entorno de desarrollo, lo tratamos como el dominio base.
-  if (hostname.endsWith('cloudworkstations.dev') || hostname.endsWith('app.idx.dev')) {
+  // Forzar el hostname a ser el BASE_HOST si estamos en un entorno de desarrollo de Vercel/IDX
+  // Esto previene que se usen URLs de preview como base para subdominios.
+  if (hostname.endsWith('vercel.app') || hostname.endsWith('cloudworkstations.dev') || hostname.endsWith('app.idx.dev')) {
       hostname = BASE_HOST;
   }
 
   let tenantId: string | null = null;
   
   if (hostname.toLowerCase() !== BASE_HOST.toLowerCase()) {
+    // Si el hostname no es el dominio base, intentamos extraer un subdominio.
     const potentialSubdomain = hostname.replace(`.${BASE_HOST}`, '');
     
-    // Aquí podrías añadir una llamada a una API para validar que el subdominio existe en tu DB
-    // Por ahora, asumimos que cualquier subdominio es un tenantId potencial.
-    // Esto se gestiona mejor con una lista de tenants válidos.
+    // Validar el subdominio contra una lista de tenants conocidos
     const validTenants = await fetchValidTenantSubdomains(request);
     if (validTenants.includes(potentialSubdomain)) {
         tenantId = potentialSubdomain;
         console.log(`Middleware: Tenant identificado: ${tenantId}`);
     } else {
+        // Si el subdominio no es válido, redirigir al dominio base.
         console.warn(`Middleware: Subdominio desconocido '${potentialSubdomain}'. Redirigiendo al dominio base.`);
-        return NextResponse.redirect(new URL(url.pathname, `https://${BASE_HOST}`));
+        const baseAppUrl = new URL(url.pathname, `https://${BASE_HOST}`);
+        return NextResponse.redirect(baseAppUrl);
     }
   } else {
+    // Estamos en el dominio base.
     console.log(`Middleware: Acceso al dominio base: ${hostname}`);
   }
 
+  // Establecer la cabecera x-tenant-id para que el resto de la aplicación la use.
   const requestHeaders = new Headers(request.headers);
   if (tenantId) {
     requestHeaders.set('x-tenant-id', tenantId);
-    console.log(`Middleware: Estableciendo cabecera x-tenant-id: ${tenantId}`);
   } else {
     requestHeaders.delete('x-tenant-id'); 
-    console.log(`Middleware: Sin cabecera x-tenant-id.`);
   }
   
   return NextResponse.next({
