@@ -15,32 +15,8 @@ import { auth, db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { generateInitialsAvatar, dataUriToBlob, getRandomColor, getUserInitials } from "@/lib/utils";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import type { Role, User, StoredLicenseInfo, EffectiveLicenseStatus } from './types';
 
-export interface User extends DocumentData {
-  id: string;
-  email: string;
-  name: string; 
-  tenantId: string; 
-  role: string;
-  subdomain?: string; // Subdominio extraído para redirección (ej. "pedro")
-  createdAt?: string;
-}
-
-export interface Role extends DocumentData {
-  id: string;
-  name: string;
-  permissions: string[];
-}
-
-export interface StoredLicenseInfo extends DocumentData {
-  status: 'active' | 'expired' | 'trial' | 'cancelled' | 'not_configured' | string;
-  expiryDate?: Timestamp | string;
-  maxUsersAllowed?: number;
-  type?: string;
-  licenseKey?: string;
-}
-
-export type EffectiveLicenseStatus = 'active' | 'expired' | 'no_license' | 'limit_reached' | 'pending' | 'not_configured' | 'cancelled';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -117,28 +93,32 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         if (userDocSnap.exists()) {
           const userData = userDocSnap.data() as Omit<User, 'id'>;
-          let userWithId: User = { ...userData, id: fbUser.uid, tenantId: userData.tenantId || "" };
+          let userWithSubdomain: User = { ...userData, id: fbUser.uid };
 
-          setTenantId(userWithId.tenantId); // Guardar tenantId
+          setTenantId(userData.tenantId); // Guardar tenantId
 
-          // Lógica para determinar el subdominio
-          if (userWithId.tenantId) {
-            const baseDomain = (process.env.NEXT_PUBLIC_BASE_URL || 'localhost').replace(/:\d+$/, '');
-            
-            const tenantDocRef = doc(db, "tenants", userWithId.tenantId);
+          // Lógica para determinar el subdominio para redirección
+          if (userData.tenantId) {
+            const baseDomain = (process.env.NEXT_PUBLIC_BASE_URL || 'localhost:3000').replace(/^https?:\/\//, '');
+            const baseDomainName = baseDomain.split('.')[0];
+            const tenantDocRef = doc(db, "tenants", userData.tenantId);
             const tenantDocSnap = await getDoc(tenantDocRef);
-            
+
             if (tenantDocSnap.exists()) {
-              const tenantData = tenantDocSnap.data();
-              const tenantDomain = tenantData.domain as string; // ej. "ayalait.uy"
-              
-              if (tenantDomain && tenantDomain.toLowerCase() !== baseDomain.toLowerCase()) {
-                userWithId.subdomain = tenantDomain.split('.')[0]; // ej. "ayalait"
-              }
+                const tenantData = tenantDocSnap.data();
+                const tenantDomain = tenantData.domain as string; // ej. "pedro.ayala.com" o "clavecrm.com"
+                
+                if (tenantDomain) {
+                    const subdomain = tenantDomain.split('.')[0];
+                    // Si el subdominio del tenant NO es el mismo que el del dominio base, lo asignamos para redirección
+                    if(subdomain.toLowerCase() !== baseDomainName.toLowerCase()) {
+                      userWithSubdomain.subdomain = subdomain;
+                    }
+                }
             }
           }
 
-          setCurrentUser(userWithId);
+          setCurrentUser(userWithSubdomain);
           
           if (userData.role) {
             const roleDocRef = doc(db, "roles", userData.role);
