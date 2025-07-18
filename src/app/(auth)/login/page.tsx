@@ -26,23 +26,34 @@ export default function LoginPage() {
   useEffect(() => {
     // This effect handles redirection AFTER the user data is confirmed to be loaded.
     if (isUserDataLoaded && currentUser) {
-      console.log("Login Page: User is loaded and authenticated. Checking for redirection.");
-      
       const { subdomain } = currentUser;
+
+      // Use NEXT_PUBLIC_BASE_URL as the single source of truth for the domain.
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+
+      if (!baseUrl) {
+        console.error("LoginPage: NEXT_PUBLIC_BASE_URL no está configurado en las variables de entorno.");
+        toast({
+          title: "Error de Configuración",
+          description: "El dominio base de la aplicación no está configurado. La redirección fallará.",
+          variant: "destructive"
+        });
+        return; // Detener si la URL base no está configurada.
+      }
       
+      const protocol = baseUrl.startsWith('localhost') ? 'http://' : 'https://';
+      const cleanBaseUrl = baseUrl.replace(/^https?:\/\//, '');
+
       if (subdomain) {
-        // Construct the tenant URL using the environment variable.
-        const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL || window.location.host).replace(/^https?:\/\//, '');
-        const tenantUrl = `https://${subdomain}.${baseUrl}/dashboard`;
-        console.log(`Login Page: Redirecting to tenant URL: ${tenantUrl}`);
+        // Redirigir al subdominio del tenant.
+        const tenantUrl = `${protocol}${subdomain}.${cleanBaseUrl}/dashboard`;
         window.location.href = tenantUrl;
       } else {
-        // No subdomain means user belongs to the base domain. Redirect to local dashboard.
-        console.log("Login Page: User has no subdomain. Redirecting to /dashboard on main domain.");
+        // Redirigir al dashboard en el dominio base.
         router.push("/dashboard");
       }
     }
-  }, [currentUser, isUserDataLoaded, router]);
+  }, [currentUser, isUserDataLoaded, router, toast]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
