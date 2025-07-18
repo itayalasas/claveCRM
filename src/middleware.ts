@@ -1,30 +1,26 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 
-const BASE_HOST = (process.env.NEXT_PUBLIC_BASE_URL || 'localhost').replace(/:\d+$/, '');
+// Limpia la URL base, eliminando protocolo y puerto.
+const BASE_HOST = (process.env.NEXT_PUBLIC_BASE_URL || 'localhost:3000').replace(/^https?:\/\//, '').replace(/:\d+$/, '');
 
-// Cache for tenant IDs and timestamp of the last fetch
+// Cache para los tenants válidos.
 let cachedTenantIds: string[] | null = null;
 let lastFetchTimestamp: number = 0;
-const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes, adjust as needed
+const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutos
 
-async function fetchProcessedTenantIds(request: NextRequest): Promise<string[]> {
+async function fetchValidTenantSubdomains(request: NextRequest): Promise<string[]> {
   const now = Date.now();
   if (cachedTenantIds && (now - lastFetchTimestamp < CACHE_DURATION_MS)) {
-    console.log("Middleware: fetchProcessedTenantIds - Using cached tenant IDs");
     return cachedTenantIds;
   }
 
-  console.log("Middleware: fetchProcessedTenantIds - Fetching from API /api/get-tenants");
   try {
     const apiUrl = new URL('/api/get-tenants', request.nextUrl.origin);
-    
-    const response = await fetch(apiUrl.toString(), {
-        // cache: 'no-store' // Use this to ensure fresh data if you don't use revalidate in the API route
-    });
+    const response = await fetch(apiUrl.toString());
 
     if (!response.ok) {
-      console.error(`Middleware: Error fetching /api/get-tenants: ${response.status} ${response.statusText}`);
+      console.error(`Middleware: Error al obtener tenants: ${response.status}`);
       return cachedTenantIds || []; 
     }
 
@@ -32,25 +28,19 @@ async function fetchProcessedTenantIds(request: NextRequest): Promise<string[]> 
     if (data && Array.isArray(data.tenantIds)) {
       cachedTenantIds = data.tenantIds;
       lastFetchTimestamp = now;
-      console.log("Middleware: fetchProcessedTenantIds - Tenant IDs updated from API:", cachedTenantIds);
+      console.log("Middleware: Subdominios de tenants actualizados:", cachedTenantIds);
       return cachedTenantIds!;
-    } else {
-      console.warn("Middleware: fetchProcessedTenantIds - API response not in expected format.");
-      return cachedTenantIds || [];
     }
   } catch (error) {
-    console.error("Middleware: fetchProcessedTenantIds - Exception during fetch:", error);
-    return cachedTenantIds || [];
+    console.error("Middleware: Excepción al obtener tenants:", error);
   }
+  return cachedTenantIds || [];
 }
 
 export async function middleware(request: NextRequest) {
   const url = request.nextUrl.clone();
-  let hostname = (request.headers.get('host') || BASE_HOST).replace(/:\d+$/, '');
-
-  console.log(`Middleware: Processing request for hostname: ${hostname}`);
-
-  // Exclude API routes and static assets from tenant logic
+  
+  // Excluir rutas de API y assets estáticos.
   if (
     url.pathname.startsWith('/api/') ||
     url.pathname.startsWith('/_next/') ||
@@ -60,33 +50,45 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const KNOWN_TENANTS = await fetchProcessedTenantIds(request);
-  console.log(`Middleware: Dynamically loaded KNOWN_TENANTS: ${KNOWN_TENANTS}`);
+  // Obtener hostname y limpiarlo.
+  let hostname = (request.headers.get('host') || BASE_HOST).replace(/:\d+$/, '');
+  
+  // Normalizar para entornos de preview de Vercel/Netlify
+  if (process.env.NEXT_PUBLIC_VERCEL_URL && hostname.endsWith(process.env.NEXT_PUBLIC_VERCEL_URL)) {
+    hostname = BASE_HOST;
+  }
+  // Normalizar para entornos de desarrollo como Firebase Studio/IDX
+  if (hostname.endsWith('cloudworkstations.dev') || hostname.endsWith('app.idx.dev')) {
+      hostname = BASE_HOST;
+  }
 
-  const parts = hostname.replace(`.${BASE_HOST}`, '').split('.');
+
   let tenantId: string | null = null;
   
-  if (hostname === BASE_HOST || parts[0] === 'www' || (process.env.NEXT_PUBLIC_VERCEL_URL && hostname.endsWith(process.env.NEXT_PUBLIC_VERCEL_URL))) {
-    console.log(`Middleware: Accessing base domain or Vercel preview: ${hostname}`);
-  } else if (parts.length > 0 && parts[0] !== BASE_HOST.split('.')[0] && parts[0] !== '') {
-    tenantId = parts[0];
-    if (!KNOWN_TENANTS.includes(tenantId)) {
-        console.warn(`Middleware: Unknown subdomain '${tenantId}'. Treating as no specific tenant.`);
-        tenantId = null; 
+  // Lógica de detección de subdominio
+  if (hostname !== BASE_HOST) {
+    // Si el hostname NO es el dominio base, intentamos extraer el subdominio.
+    const potentialSubdomain = hostname.replace(`.${BASE_HOST}`, '');
+    
+    // Verificar si el subdominio extraído es válido.
+    const validTenants = await fetchValidTenantSubdomains(request);
+    if (validTenants.includes(potentialSubdomain)) {
+      tenantId = potentialSubdomain;
+      console.log(`Middleware: Tenant identificado: ${tenantId}`);
     } else {
-        console.log(`Middleware: Tenant identified: ${tenantId}`);
+      console.warn(`Middleware: Subdominio desconocido '${potentialSubdomain}'. Se tratará como dominio base.`);
     }
   } else {
-    console.log(`Middleware: Could not identify a specific tenant for hostname: ${hostname}.`);
+    console.log(`Middleware: Acceso al dominio base: ${hostname}`);
   }
 
   const requestHeaders = new Headers(request.headers);
   if (tenantId) {
     requestHeaders.set('x-tenant-id', tenantId);
-    console.log(`Middleware: Setting header x-tenant-id: ${tenantId}`);
+    console.log(`Middleware: Estableciendo cabecera x-tenant-id: ${tenantId}`);
   } else {
     requestHeaders.delete('x-tenant-id'); 
-    console.log(`Middleware: No x-tenant-id header set.`);
+    console.log(`Middleware: Sin cabecera x-tenant-id.`);
   }
   
   return NextResponse.next({
